@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::{
     config::config::{HOST, PORT, REDIS_URL},
     manager::redis::{connection_manager::RedisManager, traits::RedisAdapter},
-    routes::auth_route::{get_key, publish, set_key},
+    routes::auth_route::{get_key, publish, set_key, subscribe},
     state::app_state::AppState,
 };
 use axum::{
@@ -25,9 +25,10 @@ async fn main() {
     let state = Arc::new(AppState { redis: redis_cfg });
 
     let app = Router::new()
-        .route("/set/:key", post(set_key))
-        .route("/get/:key", get(get_key))
+        .route("/set/{key}", post(set_key))
+        .route("/get/{key}", get(get_key))
         .route("/publisher", get(publish))
+        .route("/subscriber", get(subscribe))
         .with_state(state);
 
     let addr = format!("{}:{}", HOST, PORT);

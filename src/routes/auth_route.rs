@@ -4,7 +4,8 @@ use axum::{
     http::StatusCode,
 };
 use serde::Deserialize;
-use std::sync::Arc;
+use std::sync::{Arc};
+use tokio::sync::mpsc;
 
 use crate::{manager::redis::traits::RedisAdapter, state::app_state::AppState};
 
@@ -43,4 +44,15 @@ pub async fn publish(
 ) -> Result<Json<i32>, StatusCode> {
     let redis = RedisAdapter::publish(&state.redis, &payload.channel, &payload.message).await?;
     Ok(Json(redis))
+}
+
+pub async fn subscribe(
+    State(state): State<Arc<AppState>>,
+    Path(channel): Path<String>,
+) -> Result<Json<String>, StatusCode> {
+    let (tx, mut rx) = mpsc::channel::<String>(32);
+    RedisAdapter::subscribe(&state.redis, &channel, tx).await?;
+
+    let msg = rx.recv().await.unwrap_or_default();
+    Ok(Json(msg))
 }
