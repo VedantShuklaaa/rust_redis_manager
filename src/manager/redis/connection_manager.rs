@@ -9,20 +9,33 @@ use deadpool_redis::redis::AsyncCommands;
 pub struct RedisManager {
     pub redis_pool: Pool,
     redis_url: String,
+    pub limiter: IpRateLimiter,
 }
 
-impl RedisAdapter for RedisManager {
-    fn new(redis_url: &str) -> anyhow::Result<Self> {
+#[derive(Clone)]
+pub struct IpRateLimiter {
+    pub pool: Pool,
+    pub max_requests: u64,
+    pub window_secs: u64,
+}
+
+impl RedisManager {
+    pub fn new(redis_url: &str) -> anyhow::Result<Self> {
         let redis_cfg = Config::from_url(redis_url);
         let redis_pool = redis_cfg.create_pool(Some(Runtime::Tokio1))?;
 
         Ok(Self {
-            redis_pool,
+            redis_pool: redis_pool.clone(),
             redis_url: redis_url.to_string(),
+            limiter: IpRateLimiter {
+                pool: redis_pool,
+                max_requests: 10,
+                window_secs: 30,
+            },
         })
     }
 
-    async fn set(
+    pub async fn set(
         &self,
         key: &str,
         value: String,
@@ -41,7 +54,7 @@ impl RedisAdapter for RedisManager {
         Ok(())
     }
 
-    async fn get(&self, key: &str) -> anyhow::Result<Option<String>, StatusCode> {
+    pub async fn get(&self, key: &str) -> anyhow::Result<Option<String>, StatusCode> {
         let mut redis = self.redis_pool.get().await.map_err(|e| {
             eprintln!("redis error: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
@@ -55,7 +68,7 @@ impl RedisAdapter for RedisManager {
         Ok(count)
     }
 
-    async fn publish(&self, channel: &str, message: &str) -> anyhow::Result<i32, StatusCode> {
+    pub async fn publish(&self, channel: &str, message: &str) -> anyhow::Result<i32, StatusCode> {
         let mut redis = self.redis_pool.get().await.map_err(|e| {
             eprintln!("redis error: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
@@ -69,7 +82,7 @@ impl RedisAdapter for RedisManager {
         Ok(subscriber)
     }
 
-    async fn subscribe(
+    pub async fn subscribe(
         &self,
         channel: &str,
         tx: tokio::sync::mpsc::Sender<String>,
@@ -115,6 +128,27 @@ impl RedisAdapter for RedisManager {
                 }
             }
         });
+
+        Ok(())
+    }
+
+    pub async fn check(&self, ip: &str) -> Result<(), u64> {
+        let key = format!("rate_limit:ip:{}", ip);
+        let mut conn = self.limiter.pool.get().await.unwrap();
+
+        let count: u64 = conn.incr(&key, 1).await.unwrap();
+
+        if count == 1 {
+            let _: () = conn
+                .expire(&key, self.limiter.window_secs as i64)
+                .await
+                .unwrap();
+        }
+
+        if count > self.limiter.max_requests {
+            let ttl = conn.ttl(&key).await.unwrap();
+            return Err(ttl);
+        }
 
         Ok(())
     }

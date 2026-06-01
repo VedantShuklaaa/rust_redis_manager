@@ -9,4 +9,5 @@ pub trait RedisAdapter: Sized {
     async fn get(&self, key: &str) -> Result<Option<String>, StatusCode>;
     async fn publish(&self, channel: &str, message: &str) -> Result<i32, StatusCode>;
 	async fn subscribe(&self, channel: &str, tx: mpsc::Sender<String>) -> Result<(), StatusCode>;
+    async fn check(&self, ip: &str) -> Result<(), u64>;
 }

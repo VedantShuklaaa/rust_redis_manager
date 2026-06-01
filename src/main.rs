@@ -1,5 +1,6 @@
 mod config;
 mod manager;
+mod middleware;
 mod routes;
 mod state;
 
@@ -7,7 +8,9 @@ use std::sync::Arc;
 
 use crate::{
     config::config::{HOST, PORT, REDIS_URL},
-    manager::redis::{connection_manager::RedisManager, traits::RedisAdapter},
+    manager::{
+        redis::{connection_manager::RedisManager, traits::RedisAdapter},
+    },
     routes::auth_route::{get_key, publish, set_key, subscribe},
     state::app_state::AppState,
 };
